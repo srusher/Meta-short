@@ -8,9 +8,10 @@ process BBMAP_REFORMAT {
 
     input:
     tuple val(meta), path(fastq)
+    val(num_subsamples)
 
     output:
-    tuple val(meta), path("*deduped.fastq")      , optional:true, emit: fastq
+    tuple val(meta), path("*_subsample*.fastq.gz*")      , optional:true, emit: fastq
 
     when:
     task.ext.when == null || task.ext.when
@@ -20,8 +21,11 @@ process BBMAP_REFORMAT {
     def prefix = task.ext.prefix ?: "${meta.id}"
 
     """
-    reformat.sh in=$fastq out=${prefix}_filtered_again.fastq minlength=1
+    reformat.sh in=${fastq[0]} \
+        out=${prefix}_subsample-${num_subsamples}.fastq \
+        samplereadstarget=${num_subsamples} \
+        sampleseed=13
 
-    dedupe.sh in=${prefix}_filtered_again.fastq out=${prefix}_filtered_deduped.fastq rmn=f
+    gzip -f *_subsample*.fastq
     """
 }

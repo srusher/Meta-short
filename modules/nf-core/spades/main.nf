@@ -1,10 +1,11 @@
 process SPADES {
     tag "$meta.id"
     label 'process_high_memory'
+    errorStrategy 'ignore'
 
     conda "${moduleDir}/environment.yml"
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://depot.galaxyproject.org/singularity/spades:4.0.0--h6dccd9a_3' :
+        '/scicomp/groups-pure/OID/NCEZID/DFWED/WDPB/EMEL/singularity/spades/spades-4.1.0.sif' :
         'biocontainers/spades:3.15.5--h95f258a_1' }"
 
     input:

@@ -1,6 +1,7 @@
 process KRAKEN2_KRAKEN2 {
     tag "$meta.id"
     label 'process_high'
+    errorStrategy 'ignore'
 
     conda "${moduleDir}/environment.yml"
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
@@ -36,6 +37,27 @@ process KRAKEN2_KRAKEN2 {
     def compress_reads_command = save_output_fastqs ? "pigz -p $task.cpus *.fastq" : ""
 
     """
+    if ${params.memory_saver}; then
+
+    start="false"
+
+        while [[ \$start == "false" ]]; do
+
+            if [[ \$(ls ${projectDir}/queue/kraken | wc -l) -gt 0 ]]; then
+
+                sleep 5
+            
+            else
+
+                start="true"
+                touch ${projectDir}/queue/kraken/$prefix-kraken2
+
+            fi
+
+        done
+
+    fi
+
     kraken2 \\
         --db $db \\
         --threads $task.cpus \\
@@ -48,6 +70,12 @@ process KRAKEN2_KRAKEN2 {
         $args \\
         $reads
 
+    if ${params.memory_saver}; then
+
+        rm -f ${projectDir}/queue/kraken/$prefix-kraken2
+
+    fi
+
     $compress_reads_command
 
     cat <<-END_VERSIONS > versions.yml
@@ -55,33 +83,34 @@ process KRAKEN2_KRAKEN2 {
         kraken2: \$(echo \$(kraken2 --version 2>&1) | sed 's/^.*Kraken version //; s/ .*\$//')
         pigz: \$( pigz --version 2>&1 | sed 's/pigz //g' )
     END_VERSIONS
-    """
-
-    stub:
-    def args = task.ext.args ?: ''
-    def prefix = task.ext.prefix ?: "${meta.id}"
-    def paired       = meta.single_end ? "" : "--paired"
-    def classified   = meta.single_end ? "${prefix}.classified.fastq.gz"   : "${prefix}.classified_1.fastq.gz ${prefix}.classified_2.fastq.gz"
-    def unclassified = meta.single_end ? "${prefix}.unclassified.fastq.gz" : "${prefix}.unclassified_1.fastq.gz ${prefix}.unclassified_2.fastq.gz"
-    def readclassification_option = save_reads_assignment ? "--output ${prefix}.kraken2.classifiedreads.txt" : "--output /dev/null"
-    def compress_reads_command = save_output_fastqs ? "pigz -p $task.cpus *.fastq" : ""
 
     """
-    touch ${prefix}.kraken2.report.txt
 
-    if [ "$save_output_fastqs" == "true" ]; then
-        touch $classified
-        touch $unclassified
-    fi
-    if [ "$save_reads_assignment" == "true" ]; then
-        touch ${prefix}.kraken2.classifiedreads.txt
-    fi
+    // stub:
+    // def args = task.ext.args ?: ''
+    // def prefix = task.ext.prefix ?: "${meta.id}"
+    // def paired       = meta.single_end ? "" : "--paired"
+    // def classified   = meta.single_end ? "${prefix}.classified.fastq.gz"   : "${prefix}.classified_1.fastq.gz ${prefix}.classified_2.fastq.gz"
+    // def unclassified = meta.single_end ? "${prefix}.unclassified.fastq.gz" : "${prefix}.unclassified_1.fastq.gz ${prefix}.unclassified_2.fastq.gz"
+    // def readclassification_option = save_reads_assignment ? "--output ${prefix}.kraken2.classifiedreads.txt" : "--output /dev/null"
+    // def compress_reads_command = save_output_fastqs ? "pigz -p $task.cpus *.fastq" : ""
 
-    cat <<-END_VERSIONS > versions.yml
-    "${task.process}":
-        kraken2: \$(echo \$(kraken2 --version 2>&1) | sed 's/^.*Kraken version //; s/ .*\$//')
-        pigz: \$( pigz --version 2>&1 | sed 's/pigz //g' )
-    END_VERSIONS
-    """
+    // """
+    // touch ${prefix}.kraken2.report.txt
+
+    // if [ "$save_output_fastqs" == "true" ]; then
+    //     touch $classified
+    //     touch $unclassified
+    // fi
+    // if [ "$save_reads_assignment" == "true" ]; then
+    //     touch ${prefix}.kraken2.classifiedreads.txt
+    // fi
+
+    // cat <<-END_VERSIONS > versions.yml
+    // "${task.process}":
+    //     kraken2: \$(echo \$(kraken2 --version 2>&1) | sed 's/^.*Kraken version //; s/ .*\$//')
+    //     pigz: \$( pigz --version 2>&1 | sed 's/pigz //g' )
+    // END_VERSIONS
+    // """
 
 }

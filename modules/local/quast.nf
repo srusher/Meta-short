@@ -16,7 +16,7 @@ process QUAST {
 
     script:
     """
-    metaquast.py --threads "${task.cpus}" --rna-finding --max-ref-number 0 -l "${meta.id}" "${assembly}" -o "QUAST"
+    quast.py --threads "${task.cpus}" -l "${meta.id}" "${assembly}" -o "QUAST"
     cp QUAST/report.tsv QUAST/${meta.id}_report_rawassemblies.tsv
 
     cat <<-END_VERSIONS > versions.yml

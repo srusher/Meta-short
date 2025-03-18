@@ -23,7 +23,7 @@ process BLAST_BLASTN {
     def prefix = task.ext.prefix ?: "${meta.id}"
     """
     BLASTDB=/scicomp/groups-pure/OID/NCEZID/DFWED/WDPB/EMEL/Projects/Long_Read_Analysis/data/blast/taxonomy
-    blast_args="6 qseqid sacc pident length mismatch evalue bitscore stitle staxids"
+    blast_args="6 qseqid sacc pident length mismatch evalue bitscore qcovs stitle staxids"
     blastn \\
         -db "${params.blast_db}" \\
         -query $fasta \\

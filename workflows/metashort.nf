@@ -56,6 +56,7 @@ include { KRAKENTOOLS_KREPORT2KRONA                      } from '../modules/nf-c
 include { KRAKENTOOLS_EXTRACTKRAKENREADS                 } from '../modules/nf-core/krakentools/extractkrakenreads'
 include { KRONA_KTIMPORTTEXT                             } from '../modules/nf-core/krona/ktimporttext/main'
 include { METAPHLAN                                      } from '../modules/nf-core/metaphlan/main'
+include { MINIMAP2_ALIGN as ALIGN_READS                  } from '../modules/nf-core/minimap2/main'
 include { SPADES                                         } from '../modules/nf-core/spades/main'
 include { MEGAHIT                                        } from '../modules/nf-core/megahit/main'
 include { MAXBIN2                                        } from '../modules/nf-core/maxbin2/main'
@@ -66,13 +67,19 @@ include { CUSTOM_DUMPSOFTWAREVERSIONS                    } from '../modules/nf-c
 //
 // MODULE: custom, local modules
 //
-include { BBMAP_REFORMAT                               } from '../modules/local/bbmap_reformat'
-include { FASTP                                        } from '../modules/local/fastp'
-include { FASTQSCREEN                                  } from '../modules/local/fastq_screen'
-include { UNZIP                                        } from '../modules/local/unzip'
-include { UNZIP as UNZIP_POLISHED                      } from '../modules/local/unzip'
-include { QUAST                                        } from '../modules/local/quast'
-include { BLAST_BLASTN                                 } from '../modules/local/blastn'
+include { UPDATE_NODES_DB                                 } from '../modules/local/update_nodes_db'
+include { BBMAP_REFORMAT as BBMAP_REFORMAT_SUBSAMPLE      } from '../modules/local/bbmap_reformat_subsample'
+include { FASTP                                           } from '../modules/local/fastp'
+include { FASTQSCREEN                                     } from '../modules/local/fastq_screen'
+include { ALIGNMENT_CLASSIFY                              } from '../modules/local/alignment_classify'
+include { SAMTOOLS_VIEW as SAMTOOLS_QUALITY_FILTER        } from '../modules/local/samtools_view'
+include { SAMTOOLS_FASTQ as SAMTOOLS_FASTQ_MAPPED         } from '../modules/local/samtools_fastq'
+include { BBMAP_REFORMAT as BBMAP_REFORMAT_CLEAN_MAPPED   } from '../modules/local/bbmap_reformat'
+include { KRAKEN_ALIGNMENT_COMPARISON                     } from '../modules/local/alignment_and_kraken_comparison'
+include { UNZIP                                           } from '../modules/local/unzip'
+include { UNZIP as UNZIP_POLISHED                         } from '../modules/local/unzip'
+include { QUAST                                           } from '../modules/local/quast'
+include { BLAST_BLASTN                                    } from '../modules/local/blastn'
 
 
 /*
@@ -80,6 +87,36 @@ include { BLAST_BLASTN                                 } from '../modules/local/
     RUN MAIN WORKFLOW
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
+
+// check to make sure only one filtering technique is being used
+if (!params.skip_alignment_based_filtering && !params.skip_extract_kraken_reads) {
+
+    println "Error: You can only select one filtering technique - check the parameters [skip_alignment_based_filtering] and [skip_extract_kraken_reads] to ensure you are skipping at least one!"
+    System.exit(1)
+
+}
+
+//clearing out kraken and minimap2 queues if memory_saver mode is enabled (only required for local compute; memory allocation should generally be handled by the job scheduler when using the cluster)
+if (params.memory_saver) {
+
+    def kraken_queue = new File("${projectDir}/queue/kraken")
+
+    if (kraken_queue.exists() && kraken_queue.isDirectory()) {
+        kraken_queue.eachFile { file ->
+            file.delete()
+        }
+    }
+
+    def minimap2_queue = new File("${projectDir}/queue/minimap2")
+
+    if (minimap2_queue.exists() && minimap2_queue.isDirectory()) {
+        minimap2_queue.eachFile { file ->
+            file.delete()
+        }
+    }
+
+}
+
 
 // Info required for completion email and summary
 def multiqc_report = []
@@ -89,13 +126,32 @@ ch_multiqc_files = Channel.empty()
 
 workflow METASHORT {
 
+    if (!params.skip_alignment_based_filtering && params.filter_alignment_by_id) {
+
+        UPDATE_NODES_DB (
+
+            params.local_nodes_db,
+            params.ncbi_taxonomy_nodes,
+            params.my_tax_ids
+
+        )
+
+        placeholder = UPDATE_NODES_DB.out.complete
+
+    } else {
+
+        placeholder = []
+
+    }
+
     ch_versions = Channel.empty()
 
     //
     // SUBWORKFLOW: Read in samplesheet, validate and stage input files
     //
     INPUT_CHECK (
-        file(params.input)
+        file(params.input),
+        placeholder
     )
     ch_versions = ch_versions.mix(INPUT_CHECK.out.versions)
     // TODO: OPTIONAL, you can use nf-validation plugin to create an input channel from the samplesheet with Channel.fromSamplesheet("input")
@@ -108,12 +164,12 @@ workflow METASHORT {
 
     if (!params.skip_subsample) {
 
-        BBMAP_REFORMAT (
+        BBMAP_REFORMAT_SUBSAMPLE (
             INPUT_CHECK.out.reads,
             params.num_subsamples
         )
 
-        raw_reads = BBMAP_REFORMAT.out.fastq
+        raw_reads = BBMAP_REFORMAT_SUBSAMPLE.out.fastq
 
     } else {
 
@@ -126,58 +182,68 @@ workflow METASHORT {
     )
     ch_versions = ch_versions.mix(FASTQC_RAW.out.versions.first())
 
-    if (params.trim_tool == "fastp") {
+    if (!params.skip_trimming) {
 
-        if (params.use_adapter_reference) {
+        if (params.trim_tool == "fastp") {
 
-            FASTP (
-                raw_reads,
-                ["${params.adapt_ref}"],
-                [],
-                [],
-                []
+            if (!params.adapter_auto_detect) {
+
+                FASTP (
+                    raw_reads,
+                    ["${params.adapt_ref}"],
+                    [],
+                    [],
+                    []
+                )
+
+            } else {
+
+                FASTP (
+                    raw_reads,
+                    [],
+                    [],
+                    [],
+                    []
+                )
+                
+            }
+
+            trimmed_reads = FASTP.out.reads
+        
+        } else if (params.trim_tool == "trimmomatic") {
+
+            TRIMMOMATIC (
+
+                raw_reads
+
             )
 
-        } else {
+            trimmed_reads = TRIMMOMATIC.out.trimmed_reads
 
-            FASTP (
-                raw_reads,
-                [],
-                [],
-                [],
-                []
-            )
-            
         }
 
-        trimmed_reads = FASTP.out.reads
-    
-    } else if (params.trim_tool == "trimmomatic") {
+        FASTQC_TRIMMED (
 
-        TRIMMOMATIC (
-
-            raw_reads
+            trimmed_reads
 
         )
 
-        trimmed_reads = TRIMMOMATIC.out.trimmed_reads
+        FASTQC_CH = FASTQC_TRIMMED
+        ch_versions = ch_versions.mix(FASTQC_TRIMMED.out.versions.first())
+
+    } else {
+
+        FASTQC_CH = FASTQC_RAW
+        trimmed_reads = raw_reads
 
     }
-
-    FASTQC_TRIMMED (
-
-        trimmed_reads
-
-    )
-
-    ch_versions = ch_versions.mix(FASTQC_TRIMMED.out.versions.first())
 
     // taxonmic profiling with kraken2
     if (!params.skip_kraken2) {
         
         KRAKEN2_MAIN (
 
-            filtered_reads,
+            trimmed_reads,
             params.kraken_db_main,
             true,
             true
@@ -199,7 +265,7 @@ workflow METASHORT {
     if (!params.skip_fastqscreen) {
 
         FASTQSCREEN (
-            filtered_reads,
+            trimmed_reads,
             params.fastq_screen_conf
         )
 
@@ -208,10 +274,78 @@ workflow METASHORT {
     if (!params.skip_methaphlan) {
 
         METAPHLAN (
-            filtered_reads,
+            trimmed_reads,
             params.methaphlan_db
         )
 
+    }
+
+    if (!params.skip_alignment_based_filtering) {
+
+        ALIGN_READS (
+
+            trimmed_reads,
+            [[params.minimap2_meta],[params.minimap2_index]],
+            true,
+            false,
+            false        
+
+        )
+        
+        ALIGNMENT_CLASSIFY (
+
+            ALIGN_READS.out.bam.join(FASTQC_CH.out.html),
+            params.seqid2taxid_map,
+            params.filter_alignment_by_id,
+            params.my_tax_ids,
+            params.include_children
+
+        )
+
+        if (params.filter_alignment_by_id) {
+
+            alignment_classified_bam = ALIGNMENT_CLASSIFY.out.classified_plus_filtered_bam
+
+        } else {
+
+            alignment_classified_bam = ALIGNMENT_CLASSIFY.out.classified_bam
+
+        }
+
+        // filtering for reads with a mapping quality at or above params.mapping_quality
+        SAMTOOLS_QUALITY_FILTER (
+
+            alignment_classified_bam,
+            false
+
+        )
+
+        // capturing aligned reads and converting to fastq
+        SAMTOOLS_FASTQ_MAPPED (
+
+            SAMTOOLS_QUALITY_FILTER.out.bam,
+            false
+
+        )
+
+        // using bbmap suite to remove empty reads and deduplicate aligned reads
+        //bbmap dedup has been removing reads with unqiue names - which is unexpected. So we're going to skip this by default
+        if (!params.skip_bbmap_dedup) {
+
+            BBMAP_REFORMAT_CLEAN_MAPPED (
+
+                SAMTOOLS_FASTQ_MAPPED.out.fastq
+
+            )
+
+            // setting filtered_reads channel equal to aligned reads
+            filtered_reads = BBMAP_REFORMAT_CLEAN_MAPPED.out.fastq
+
+        } else {
+
+            filtered_reads = SAMTOOLS_FASTQ_MAPPED.out.fastq
+
+        }
     }
 
     // filter reads 
@@ -219,20 +353,27 @@ workflow METASHORT {
 
         KRAKENTOOLS_EXTRACTKRAKENREADS (
 
-            ["${params.kraken_tax_ids}"],
+            ["${params.kraken_tax_id}"],
             KRAKEN2_MAIN.out.classified_reads_assignment,
             KRAKEN2_MAIN.out.classified_reads_fastq,
             KRAKEN2_MAIN.out.report
 
         )
 
-        filtered_reads = KRAKENTOOLS_EXTRACTKRAKENREADS.out.extracted_kraken2_reads
-
-    } else {
-
-        filtered_reads = trimmed_reads
+        filtered_reads = KRAKENTOOLS_EXTRACTKRAKENREADS.out.classified_reads_fastq
 
     }
+
+    //if kraken2 and custom alignment are both used for classification then compare the results
+    if (!params.skip_kraken2 && !params.skip_alignment_based_filtering) {
+
+        KRAKEN_ALIGNMENT_COMPARISON (
+
+            KRAKEN2_MAIN.out.report.join(ALIGNMENT_CLASSIFY.out.summary_tsv)
+
+        )
+
+    }    
 
     if (!params.skip_assembly) {
         
@@ -338,16 +479,20 @@ workflow METASHORT {
     ch_multiqc_files = ch_multiqc_files.mix(ch_methods_description.collectFile(name: 'methods_description_mqc.yaml'))
     // ch_multiqc_files = ch_multiqc_files.mix(CUSTOM_DUMPSOFTWAREVERSIONS.out.mqc_yml.collect())
     ch_multiqc_files = ch_multiqc_files.mix(FASTQC_RAW.out.zip.collect { it[1] }.ifEmpty([]))
-    if (params.trim_tool == "trimmomatic") {
 
-        ch_multiqc_files = ch_multiqc_files.mix(TRIMMOMATIC.out.trim_log.collect{it[1]}.ifEmpty([]))
+    if (!params.skip_trimming) {
+        ch_multiqc_files = ch_multiqc_files.mix(FASTQC_TRIMMED.out.zip.collect { it[1] }.ifEmpty([]))
+        
+        if (params.trim_tool == "trimmomatic") {
 
-    } else if (params.trim_tool == "fastp") {
+            ch_multiqc_files = ch_multiqc_files.mix(TRIMMOMATIC.out.trim_log.collect{it[1]}.ifEmpty([]))
 
-        ch_multiqc_files = ch_multiqc_files.mix(FASTP.out.json.collect { it[1] }.ifEmpty([]))
+        } else if (params.trim_tool == "fastp") {
 
+            ch_multiqc_files = ch_multiqc_files.mix(FASTP.out.json.collect { it[1] }.ifEmpty([]))
+
+        }
     }
-    ch_multiqc_files = ch_multiqc_files.mix(FASTQC_TRIMMED.out.zip.collect { it[1] }.ifEmpty([]))
 
     if (!params.skip_kraken2) {
         ch_multiqc_files = ch_multiqc_files.mix(KRAKEN2_MAIN.out.report_mqc.collect().ifEmpty([]))
