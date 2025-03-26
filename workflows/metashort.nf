@@ -50,13 +50,11 @@ include { INPUT_CHECK } from '../subworkflows/local/input_check'
 include { FASTQC as FASTQC_RAW                           } from '../modules/nf-core/fastqc/main'
 include { FASTQC as FASTQC_TRIMMED                       } from '../modules/nf-core/fastqc/main'
 include { TRIMMOMATIC                                    } from '../modules/nf-core/trimmomatic/main'
-include { KRAKEN2_KRAKEN2 as KRAKEN2_MAIN                } from '../modules/nf-core/kraken2/kraken2/main'
 include { KRONA_KRONADB                                  } from '../modules/nf-core/krona/krona_db/main'
 include { KRAKENTOOLS_KREPORT2KRONA                      } from '../modules/nf-core/krakentools/kreport2krona/main'
 include { KRAKENTOOLS_EXTRACTKRAKENREADS                 } from '../modules/nf-core/krakentools/extractkrakenreads'
 include { KRONA_KTIMPORTTEXT                             } from '../modules/nf-core/krona/ktimporttext/main'
 include { METAPHLAN                                      } from '../modules/nf-core/metaphlan/main'
-include { MINIMAP2_ALIGN as ALIGN_READS                  } from '../modules/nf-core/minimap2/main'
 include { SPADES                                         } from '../modules/nf-core/spades/main'
 include { MEGAHIT                                        } from '../modules/nf-core/megahit/main'
 include { MAXBIN2                                        } from '../modules/nf-core/maxbin2/main'
@@ -71,11 +69,14 @@ include { UPDATE_NODES_DB                                 } from '../modules/loc
 include { BBMAP_REFORMAT as BBMAP_REFORMAT_SUBSAMPLE      } from '../modules/local/bbmap_reformat_subsample'
 include { FASTP                                           } from '../modules/local/fastp'
 include { FASTQSCREEN                                     } from '../modules/local/fastq_screen'
+include { KRAKEN2_KRAKEN2 as KRAKEN2_MAIN                 } from '../modules/local/kraken2'
+include { MINIMAP2_ALIGN as ALIGN_READS                   } from '../modules/local/minimap2'
 include { ALIGNMENT_CLASSIFY                              } from '../modules/local/alignment_classify'
 include { SAMTOOLS_VIEW as SAMTOOLS_QUALITY_FILTER        } from '../modules/local/samtools_view'
 include { SAMTOOLS_FASTQ as SAMTOOLS_FASTQ_MAPPED         } from '../modules/local/samtools_fastq'
 include { BBMAP_REFORMAT as BBMAP_REFORMAT_CLEAN_MAPPED   } from '../modules/local/bbmap_reformat'
 include { KRAKEN_ALIGNMENT_COMPARISON                     } from '../modules/local/alignment_and_kraken_comparison'
+include { ALIGNMENT_CLASSIFICATION_GRAPH                  } from '../modules/local/alignment_classification_graph'
 include { UNZIP                                           } from '../modules/local/unzip'
 include { UNZIP as UNZIP_POLISHED                         } from '../modules/local/unzip'
 include { QUAST                                           } from '../modules/local/quast'
@@ -365,7 +366,7 @@ workflow METASHORT {
     }
 
     //if kraken2 and custom alignment are both used for classification then compare the results
-    if (!params.skip_kraken2 && !params.skip_alignment_based_filtering) {
+    if (!params.skip_kraken2 && !params.skip_alignment_based_filtering && !params.non_standard_reference) {
 
         KRAKEN_ALIGNMENT_COMPARISON (
 
@@ -373,7 +374,15 @@ workflow METASHORT {
 
         )
 
-    }    
+    } else if (!params.skip_alignment_based_filtering) {
+
+        ALIGNMENT_CLASSIFICATION_GRAPH (
+
+            ALIGNMENT_CLASSIFY.out.summary_tsv
+
+        )
+
+    }
 
     if (!params.skip_assembly) {
         

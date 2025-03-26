@@ -1,6 +1,6 @@
 process QUAST {
     tag "${meta.id}"
-
+    errorStrategy 'ignore'
     conda "bioconda::quast=5.0.2"
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
         'https://depot.galaxyproject.org/singularity/quast:5.0.2--py37pl526hb5aa323_2' :

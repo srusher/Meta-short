@@ -43,14 +43,14 @@ process KRAKEN2_KRAKEN2 {
 
         while [[ \$start == "false" ]]; do
 
-            if [[ \$(ls ${projectDir}/queue/kraken | wc -l) -gt 0 ]]; then
+            if [[ \$(ls ${projectDir}/queue/kraken2 | wc -l) -gt 0 ]]; then
 
                 sleep 5
             
             else
 
                 start="true"
-                touch ${projectDir}/queue/kraken/$prefix-kraken2
+                touch ${projectDir}/queue/kraken2/$prefix-kraken2
 
             fi
 
@@ -72,7 +72,7 @@ process KRAKEN2_KRAKEN2 {
 
     if ${params.memory_saver}; then
 
-        rm -f ${projectDir}/queue/kraken/$prefix-kraken2
+        rm -f ${projectDir}/queue/kraken2/$prefix-kraken2
 
     fi
 
