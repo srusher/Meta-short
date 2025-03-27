@@ -50,6 +50,9 @@ include { INPUT_CHECK } from '../subworkflows/local/input_check'
 include { FASTQC as FASTQC_RAW                           } from '../modules/nf-core/fastqc/main'
 include { FASTQC as FASTQC_TRIMMED                       } from '../modules/nf-core/fastqc/main'
 include { TRIMMOMATIC                                    } from '../modules/nf-core/trimmomatic/main'
+include { NONPAREIL_NONPAREIL                            } from '../modules/nf-core/nonpareil/nonpareil/main'
+include { NONPAREIL_CURVE                                } from '../modules/nf-core/nonpareil/curve/main'
+include { NONPAREIL_NONPAREILCURVESR                     } from '../modules/nf-core/nonpareil/nonpareilcurvesr/main'
 include { KRONA_KRONADB                                  } from '../modules/nf-core/krona/krona_db/main'
 include { KRAKENTOOLS_KREPORT2KRONA                      } from '../modules/nf-core/krakentools/kreport2krona/main'
 include { KRAKENTOOLS_EXTRACTKRAKENREADS                 } from '../modules/nf-core/krakentools/extractkrakenreads'
@@ -76,11 +79,14 @@ include { SAMTOOLS_VIEW as SAMTOOLS_QUALITY_FILTER        } from '../modules/loc
 include { SAMTOOLS_FASTQ as SAMTOOLS_FASTQ_MAPPED         } from '../modules/local/samtools_fastq'
 include { BBMAP_REFORMAT as BBMAP_REFORMAT_CLEAN_MAPPED   } from '../modules/local/bbmap_reformat'
 include { KRAKEN_ALIGNMENT_COMPARISON                     } from '../modules/local/alignment_and_kraken_comparison'
-include { ALIGNMENT_CLASSIFICATION_GRAPH                  } from '../modules/local/alignment_classification_graph'
-include { UNZIP                                           } from '../modules/local/unzip'
-include { UNZIP as UNZIP_POLISHED                         } from '../modules/local/unzip'
-include { QUAST                                           } from '../modules/local/quast'
-include { BLAST_BLASTN                                    } from '../modules/local/blastn'
+include { ALIGNMENT_CLASSIFICATION_GRAPH as ALIGNMENT_CLASSIFICATION_GRAPH_READS } from '../modules/local/alignment_classification_graph'
+include { UNZIP                                            } from '../modules/local/unzip'
+include { UNZIP as UNZIP_POLISHED                          } from '../modules/local/unzip'
+include { MINIMAP2_ALIGN as ALIGN_CONTIGS                  } from '../modules/local/minimap2'
+include { ALIGNMENT_CLASSIFY_CONTIGS                       } from '../modules/local/alignment_classify_contigs'
+include { ALIGNMENT_CLASSIFICATION_GRAPH as ALIGNMENT_CLASSIFICATION_GRAPH_CONTIGS } from '../modules/local/alignment_classification_graph'
+include { QUAST                                            } from '../modules/local/quast'
+include { BLAST_BLASTN                                     } from '../modules/local/blastn'
 
 
 /*
@@ -239,6 +245,37 @@ workflow METASHORT {
 
     }
 
+    if (!params.skip_nonpareil) {
+        
+        NONPAREIL_NONPAREIL (
+
+            trimmed_reads,
+            "fastq",
+            "alignment"
+
+        )
+
+        NONPAREIL_CURVE (
+
+            NONPAREIL_NONPAREIL.out.npo
+
+        )
+
+        // npo_reports = Channel.empty()
+        // npo_reports = npo_reports.mix(NONPAREIL_NONPAREIL.out.npo.collect().ifEmpty([]))
+        // npo_reports_tuple = npo_reports
+        //                     .map {meta, npo -> [[id: 'all'], npo] }
+        //                     .groupTuple()
+
+        NONPAREIL_NONPAREILCURVESR (
+
+            NONPAREIL_NONPAREIL.out.npo,
+            NONPAREIL_CURVE.out.png
+
+        )
+
+    }
+
     // taxonmic profiling with kraken2
     if (!params.skip_kraken2) {
         
@@ -376,7 +413,7 @@ workflow METASHORT {
 
     } else if (!params.skip_alignment_based_filtering) {
 
-        ALIGNMENT_CLASSIFICATION_GRAPH (
+        ALIGNMENT_CLASSIFICATION_GRAPH_READS (
 
             ALIGNMENT_CLASSIFY.out.summary_tsv
 
@@ -427,7 +464,7 @@ workflow METASHORT {
 
         UNZIP (
 
-        assembly_ch
+            assembly_ch
 
         )
 
@@ -436,8 +473,34 @@ workflow METASHORT {
 
         //assembly qc with quast
         QUAST (
-
+            
             unzip_channel, // consensus (one or more assemblies)
+
+        )
+
+        ALIGN_CONTIGS (
+
+            unzip_channel,
+            [[params.minimap2_meta],[params.minimap2_index]],
+            true,
+            false,
+            false        
+
+        )
+        
+        ALIGNMENT_CLASSIFY_CONTIGS (
+
+            ALIGN_CONTIGS.out.bam.join(QUAST.out.qc),
+            params.seqid2taxid_map,
+            false,
+            params.my_tax_ids,
+            false
+
+        )
+
+        ALIGNMENT_CLASSIFICATION_GRAPH_CONTIGS (
+
+            ALIGNMENT_CLASSIFY_CONTIGS.out.summary_tsv
 
         )
 

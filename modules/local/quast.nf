@@ -10,7 +10,7 @@ process QUAST {
     tuple val(meta), path(assembly)
 
     output:
-    path "QUAST/*.tsv"                       , emit: qc
+    tuple val(meta), path("QUAST/*report_rawassemblies.tsv")   , emit: qc
     path "QUAST/*report_rawassemblies.tsv", emit: report
     path "versions.yml"                  , emit: versions
 

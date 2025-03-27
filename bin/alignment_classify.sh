@@ -53,15 +53,15 @@ fi
 
 echo "Parsing BAM headers"
 
-singularity exec --bind /scicomp $SAMTOOLS_CONTAINER samtools view -H $2 > "$prefix-classified.sam" #printing bam headers to output sam file
+singularity exec --bind /scicomp $SAMTOOLS_CONTAINER samtools view -H $bam > "$prefix-classified.sam" #printing bam headers to output sam file
 
 echo "Converting BAM to SAM with no headers"
 
-singularity exec --bind /scicomp $SAMTOOLS_CONTAINER samtools view $2 > "$prefix-temp.sam" #converting bam to sam for easier parsing in the loop below
+singularity exec --bind /scicomp $SAMTOOLS_CONTAINER samtools view $bam > "$prefix-temp.sam" #converting bam to sam for easier parsing in the loop below
 
 if [[ "$filter_alignment_by_id" == "true" ]]; then
 
-    singularity exec --bind /scicomp $SAMTOOLS_CONTAINER samtools view -H $2 > "$prefix-classified-plus-filtered.sam" #printing bam headers to output sam file
+    singularity exec --bind /scicomp $SAMTOOLS_CONTAINER samtools view -H $bam > "$prefix-classified-plus-filtered.sam" #printing bam headers to output sam file
 
 fi
 
